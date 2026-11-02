@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anime Trail</title><link rel="stylesheet" href="style.css"><script type="module" src="popup.js"></script></head>
+<body class="popup">
+<header class="row between"><div class="row brand"><img src="../icons/trail.svg" alt="">Anime Trail</div><button id="settings" class="ghost small" title="Open settings and watch history">Settings ↗</button></header>
+<div id="notice" class="notice" role="status" hidden></div>
+<section class="card watch-card">
+  <div class="row between"><span class="eyebrow">On this tab</span><span id="tracking" class="badge"><span class="dot"></span><span id="tracking-label">Tracking</span></span></div>
+  <div id="empty" class="empty"><div class="empty-mark">▷</div><h2>Your next episode starts here.</h2><p class="help">Play an anime and we’ll pick up its title and episode. Your progress follows you between sites.</p></div>
+  <div id="current" hidden><h1 id="title"></h1><p id="episode" class="muted"></p><div class="progress"><span id="progress"></span></div><div class="row between meta"><span id="position"></span><span id="percentage"></span></div><p id="sync-state" class="help"></p></div>
+  <div class="button-row"><button id="mark" class="primary" hidden>Mark watched</button><button id="edit" class="ghost">Set title / episode</button></div>
+  <form id="correction" class="stack" hidden><label>Anime title<input id="edit-title" required maxlength="180" placeholder="e.g. Frieren: Beyond Journey’s End"></label><div class="field-row"><label>Season (optional)<input id="edit-season" type="number" min="1" max="99"></label><label>Episode<input id="edit-episode" type="number" min="1" max="10000" required></label></div><p class="help">This correction applies to the current page. The next episode is detected again.</p><button class="primary" type="submit">Save correction</button></form>
+</section>
+<section id="mal-section"><div class="row between section-head"><h2>MyAnimeList</h2><span id="account" class="meta">Not connected</span></div><p id="mal-message" class="help"></p><div class="row" style="margin-top:10px"><button id="match" class="small" hidden>Find / change match</button><button id="sync" class="small ghost">Sync now</button><button id="connect" class="small primary" hidden>Connect account ↗</button></div>
+<div id="match-panel" class="card" hidden><form id="search-form"><label>Find the correct MAL season<input id="query" placeholder="Anime title or MAL anime ID" required></label><label style="margin-top:10px">Episode offset<input id="offset" type="number" value="0" min="-10000" max="10000"></label><p class="help">MAL episode = site episode + offset. For example, site episode 25 → MAL episode 1 uses −24.</p><div class="actions"><button class="primary" type="submit">Search</button></div></form><div id="results" aria-live="polite"></div></div></section>
+<section><div class="row between section-head"><h2>Recent episodes</h2><button id="library" class="text-button">View all ↗</button></div><div id="history"></div></section>
+<footer class="row between"><span id="footer-status">Your trail, across the web.</span><button id="pause" class="text-button">Pause tracking</button></footer>
+</body></html>

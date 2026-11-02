@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Anime Trail",
+  "version": "1.1.0",
+  "description": "Keep your anime progress across websites and sync watched episodes with MyAnimeList.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "anime-trail@cadenlipham.local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "websiteContent", "websiteActivity"]
+      }
+    }
+  },
+  "permissions": ["storage", "identity", "alarms", "tabs"],
+  "host_permissions": ["http://*/*", "https://*/*", "https://myanimelist.net/*", "https://api.myanimelist.net/*"],
+  "background": {"scripts": ["background.js"], "type": "module"},
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["lib/detection.js", "resume-ui.js", "content.js"],
+    "all_frames": true,
+    "match_about_blank": true,
+    "run_at": "document_idle"
+  }],
+  "action": {"default_title": "Anime Trail", "default_popup": "ui/popup.html", "default_icon": "icons/trail.svg"},
+  "icons": {"48": "icons/trail.svg", "96": "icons/trail.svg"},
+  "options_ui": {"page": "ui/options.html", "open_in_tab": true},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"}
+}
