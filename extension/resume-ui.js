@@ -53,7 +53,7 @@
     header.append(make('span', 'Anime Trail', {class: 'brand'}), close);
     const heading = make('h2', 'Continue where you left off?');
     const title = make('p', `${offer.title}${offer.season ? ` · Season ${offer.season}` : ''}`, {class: 'title'});
-    const description = make('p', offer.kind === 'seek' ? `Resume episode ${offer.targetEpisode} at ${stamp(offer.position)}.` : offer.kind === 'next' ? `You’re on episode ${offer.currentEpisode}. You last finished episode ${offer.lastEpisode}; episode ${offer.targetEpisode} is next.` : `You’re on episode ${offer.currentEpisode}. You left off in episode ${offer.targetEpisode} at ${stamp(offer.position)}.`);
+    const description = make('p', offer.source === 'mal' ? `You’re on episode ${offer.currentEpisode}. MyAnimeList has you through episode ${offer.lastEpisode}; episode ${offer.targetEpisode} is next.` : offer.kind === 'seek' ? `Resume episode ${offer.targetEpisode} at ${stamp(offer.position)}.` : offer.kind === 'next' ? `You’re on episode ${offer.currentEpisode}. You last finished episode ${offer.lastEpisode}; episode ${offer.targetEpisode} is next.` : `You’re on episode ${offer.currentEpisode}. You left off in episode ${offer.targetEpisode} at ${stamp(offer.position)}.`);
     const actions = make('div', '', {class: 'actions'}), primary = make('button', offer.kind === 'seek' ? `Resume at ${stamp(offer.position)}` : siteUrl ? `Continue episode ${offer.targetEpisode}` : offer.kind === 'next' ? 'Open last watch page' : 'Open saved episode', {class: 'primary'});
     const stay = make('button', offer.kind === 'seek' ? 'Start here' : `Stay on episode ${offer.currentEpisode}`);
     const error = make('p', '', {class: 'error', role: 'status'}); error.hidden = true;
@@ -72,8 +72,9 @@
     if (offer.kind === 'seek' || destination) actions.append(primary);
     actions.append(stay);
     card.append(header, heading, title, description, actions, error);
+    if (offer.source === 'mal') card.append(make('p', 'Progress from MyAnimeList · timestamps stay on each browser.', {class: 'note'}));
     if (!siteUrl && offer.kind !== 'seek') {
-      let note = destination ? `Opens your saved page on ${new URL(destination).hostname}.` : 'Choose the saved episode in this site’s episode selector.';
+      let note = destination ? `Opens your saved page on ${new URL(destination).hostname}.` : `Choose episode ${offer.targetEpisode} in this site’s episode selector.`;
       if (offer.kind === 'next' && destination) note += ' Use its episode selector to continue with the next episode.';
       card.append(make('p', note, {class: 'note'}));
     }

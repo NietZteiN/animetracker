@@ -20,7 +20,8 @@ async function refresh() {
   $('connect').hidden = view.connected; $('sync').hidden = !view.connected;
   $('match').hidden = !view.connected || !current;
   const mapping = current && view.mappings[current.group];
-  $('mal-message').textContent = !view.connected ? 'Connect once to add anime and update episodes automatically.' : mapping ? `Linked to ${mapping.title}${mapping.offset ? ` · offset ${mapping.offset}` : ''}${mapping.automatic ? ' · auto-matched' : ''}` : 'Exact, unambiguous titles link automatically. You can choose the correct season here.';
+  const shared = mapping && view.malProgress?.anime?.[mapping.id];
+  $('mal-message').textContent = !view.connected ? 'Connect once to share episode progress between PCs.' : mapping ? `Linked to ${mapping.title}${mapping.offset ? ` · offset ${mapping.offset}` : ''}${shared ? ` · MAL: ${shared.list_status.num_episodes_watched} episodes watched` : ''}${mapping.automatic ? ' · auto-matched' : ''}` : 'Your MAL list is used to match shows and find your next episode. You can choose the correct season here.';
   $('footer-status').textContent = view.pending ? `${view.pending} update${view.pending === 1 ? '' : 's'} pending` : 'Your trail, across the web.';
   $('history').replaceChildren(...view.history.slice(0, 4).map(r => historyItem(r, view.mappings[r.group])));
   if (!view.history.length) $('history').append(el('p', {class: 'help', text: 'Watched episodes and playback progress appear here.'}));

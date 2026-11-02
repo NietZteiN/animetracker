@@ -2,7 +2,56 @@ import {seriesKey, episodeKey, safeUrl, excluded, applyPlayback, automaticMatch,
 import {resumeOffer, playbackIdentity} from './resume.js';
 const candidateValid = c => c && typeof c.title === 'string' && c.title.length >= 2 && c.title.length <= 180 && Number.isInteger(c.episode) && c.episode > 0 && c.episode <= 10000 && (c.season == null || (Number.isInteger(c.season) && c.season > 0 && c.season <= 99));
 export class Controller {
-  constructor(browserApi, store, mal) { this.browser = browserApi; this.store = store; this.mal = mal; this.syncing = null; }
+  constructor(browserApi, store, mal) { this.browser = browserApi; this.store = store; this.mal = mal; this.syncing = null; this.pulling = null; }
+  matchImported(state, candidate) {
+    const group = candidate.group || seriesKey(candidate);
+    if (state.mappings[group] || !state.malProgress) return;
+    const match = automaticMatch(candidate, Object.values(state.malProgress.anime));
+    if (match) state.mappings[group] = {id: match.id, title: match.title, numEpisodes: match.num_episodes || 0, offset: 0, automatic: true};
+  }
+  pullProgress(force = false) {
+    if (this.pulling) return this.pulling;
+    this.pulling = this.performPullProgress(force).finally(() => { this.pulling = null; });
+    return this.pulling;
+  }
+  async performPullProgress(force) {
+    const auth = await this.mal.auth();
+    if (!auth?.user?.id) return {skipped: true, reason: 'Connect MyAnimeList first.'};
+    const state = await this.store.run(() => this.store.load()), now = Date.now();
+    if (!state.settings.enabled) return {skipped: true, reason: 'Resume tracking to refresh MAL progress.'};
+    if (!force && state.malProgress?.userId === auth.user.id && now - state.malProgress.fetchedAt < 300000) return {cached: true, count: Object.keys(state.malProgress.anime).length};
+    if (!force && state.malPullAttempt?.userId === auth.user.id && now - state.malPullAttempt.at < 60000) return {cached: true};
+    await this.store.run(async () => {
+      const latest = await this.store.load(); latest.malPullAttempt = {userId: auth.user.id, at: now}; await this.store.save(latest);
+    });
+    try {
+      const entries = await this.mal.watchList();
+      const saved = await this.store.run(async () => {
+        const currentAuth = await this.mal.auth();
+        if (currentAuth?.user?.id !== auth.user.id || currentAuth?.clientId !== auth.clientId) return false;
+        const latest = await this.store.load();
+        latest.malProgress = {userId: auth.user.id, fetchedAt: Date.now(), anime: Object.fromEntries(entries.map(entry => [entry.id, entry]))};
+        delete latest.malProgressError;
+        for (const record of Object.values(latest.history)) { this.matchImported(latest, record); this.enqueue(latest, record); }
+        await this.store.save(latest); return true;
+      });
+      return saved ? {count: entries.length} : {skipped: true, reason: 'MAL account changed during refresh.'};
+    } catch (error) {
+      await this.store.run(async () => {
+        if ((await this.mal.auth())?.user?.id !== auth.user.id) return;
+        const latest = await this.store.load(); latest.malProgressError = error.message; await this.store.save(latest);
+      });
+      throw error;
+    }
+  }
+  async disconnect() {
+    await this.mal.disconnect();
+    return this.store.run(async () => {
+      const state = await this.store.load();
+      delete state.malProgress; delete state.malPullAttempt; delete state.malProgressError;
+      await this.store.save(state);
+    });
+  }
   async config(sender) {
     const {settings} = await this.store.load();
     let host = '';
@@ -13,6 +62,8 @@ export class Controller {
   async observe(message, sender) {
     if (!sender.tab || !(await this.config(sender)).enabled) return {};
     const state = await this.store.load(), now = Date.now(), tabId = sender.tab.id;
+    const auth = await this.mal.auth();
+    if (state.malProgress?.userId !== auth?.user?.id) delete state.malProgress;
     const url = safeUrl(sender.tab.url || (sender.frameId === 0 ? sender.url : ''));
     if (!url) return {};
     let session = await this.store.session(tabId);
@@ -32,10 +83,19 @@ export class Controller {
       session.candidate = next;
     }
     const candidate = session.manual || session.candidate || (candidateValid(message.candidate) ? message.candidate : null);
+    if (candidate) this.matchImported(state, candidate);
     if (candidate && session.resumeContext !== episodeKey(candidate)) {
       session.resumeContext = episodeKey(candidate);
       session.resumeOffer = state.settings.resumePrompts ? resumeOffer(state, candidate) : null;
       delete session.resumeDecision;
+    }
+    const mappedId = candidate && state.mappings[seriesKey(candidate)]?.id;
+    const remoteRevision = `${state.malProgress?.userId || ''}:${state.malProgress?.fetchedAt || ''}:${mappedId || ''}:${state.malProgress?.anime?.[mappedId]?.list_status.num_episodes_watched ?? ''}`;
+    if (candidate && session.remoteRevision !== remoteRevision && !session.resumeDecision && !session.pendingResume) {
+      const hadOffer = !!session.resumeOffer;
+      session.remoteRevision = remoteRevision;
+      session.resumeOffer = state.settings.resumePrompts ? resumeOffer(state, candidate) : null;
+      if (hadOffer && !session.resumeOffer) this.browser.tabs.sendMessage(tabId, {type: 'animeTrailResumeOffer', offer: null}, {frameId: 0}).catch(() => {});
     }
     const sample = message.sample;
     if (candidate && sample && sample.playing && Number.isFinite(sample.duration) && sample.duration >= 60) {
@@ -89,6 +149,7 @@ export class Controller {
     const tab = await this.browser.tabs.get(sender.tab.id), session = await this.store.session(tab.id);
     if (tab.incognito || session.url !== safeUrl(tab.url) || !session.resumeOffer || session.resumeOffer.id !== message.offerId || session.resumeDecision) throw new Error('This resume suggestion has expired. Reload the watch page.');
     const offer = session.resumeOffer;
+    if (offer.source === 'mal' && (await this.mal.auth())?.user?.id !== offer.userId) throw new Error('This MAL account’s resume suggestion has expired. Refresh your progress.');
     if (message.action === 'dismiss') {
       session.resumeDecision = 'dismissed';
       if (offer.kind === 'seek' && session.previous) {
@@ -127,6 +188,8 @@ export class Controller {
     return this.syncing;
   }
   async performSync(force) {
+    // Read shared progress before planning writes, even on a fresh installation.
+    await this.pullProgress(force).catch(() => {});
     const allowed = state => state.settings.enabled && (state.settings.autoSync || force);
     let state = await this.store.run(() => this.store.load());
     if (!allowed(state) || !await this.mal.auth()) return {pending: Object.keys(state.queue).length};
@@ -176,17 +239,21 @@ export class Controller {
       let latest = await this.store.run(() => this.store.load());
       if (!allowed(latest)) break;
       if (!valid(latest, item)) continue;
-      let error;
+      let error, sharedStatus;
+      const jobUserId = (await this.mal.auth())?.user?.id;
       try {
         const detail = await this.mal.detail(item.malId);
         const plan = syncPlan(detail, item.episode, item.completed);
         latest = await this.store.run(() => this.store.load());
-        if (!allowed(latest) || !valid(latest, item)) continue;
-        if (plan) await this.mal.update(item.malId, plan);
+        if (!allowed(latest) || !valid(latest, item) || (await this.mal.auth())?.user?.id !== jobUserId) continue;
+        const updated = plan ? await this.mal.update(item.malId, plan) : null;
+        sharedStatus = {...detail.my_list_status, ...updated,
+          status: updated?.status || plan?.status || detail.my_list_status?.status,
+          num_episodes_watched: updated?.num_episodes_watched ?? plan?.num_watched_episodes ?? detail.my_list_status?.num_episodes_watched};
       } catch (failure) { error = failure.message; }
       await this.store.run(async () => {
         const current = await this.store.load();
-        if (!valid(current, item)) return; // A correction/removal/newer episode completion won the race.
+        if (!valid(current, item) || (await this.mal.auth())?.user?.id !== jobUserId) return; // A correction, account change, removal or newer completion won the race.
         const record = current.history[item.key];
         if (error) {
           record.error = error;
@@ -194,6 +261,8 @@ export class Controller {
           queued.attempts++;
           queued.nextAt = Date.now() + Math.min(21600000, 60000 * 2 ** Math.min(queued.attempts, 8));
         } else {
+          const cached = current.malProgress?.userId === jobUserId && current.malProgress.anime[item.malId];
+          if (cached && Number.isInteger(sharedStatus?.num_episodes_watched)) cached.list_status = {...cached.list_status, ...sharedStatus};
           record.synced = {malId: item.malId, completed: Number(item.completed), at: Date.now()};
           delete record.error; delete current.queue[item.key];
         }
@@ -217,7 +286,8 @@ export class Controller {
       current = {...current, ...state.history[key], key, group: seriesKey(current)};
     }
     const history = Object.values(state.history).sort((a, b) => b.lastSeen - a.lastSeen);
-    return {settings: state.settings, connected: !!auth, user: auth?.user, redirectUri: this.browser.identity.getRedirectURL(), current, history, mappings: state.mappings, pending: Object.keys(state.queue).length};
+    const malProgress = auth?.user?.id === state.malProgress?.userId ? state.malProgress : null;
+    return {settings: state.settings, connected: !!auth, user: auth?.user, redirectUri: this.browser.identity.getRedirectURL(), current, history, mappings: state.mappings, malProgress, malProgressError: auth ? state.malProgressError || null : null, pending: Object.keys(state.queue).length};
   }
   async settings(input) {
     const state = await this.store.load();
@@ -226,7 +296,7 @@ export class Controller {
     if (input.clientId != null) {
       const id = String(input.clientId).trim();
       if (id && !/^[a-zA-Z0-9_-]{8,150}$/.test(id)) throw new Error('The Client ID format is invalid.');
-      if (id !== next.clientId) await this.mal.disconnect();
+      if (id !== next.clientId) { await this.mal.disconnect(); delete state.malProgress; delete state.malPullAttempt; delete state.malProgressError; }
       next.clientId = id;
     }
     if (input.threshold != null) {

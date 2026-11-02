@@ -124,6 +124,26 @@ export class MalClient {
     if (!Number.isInteger(id) || id < 1) throw new Error('Enter a valid MAL anime ID.');
     return this.request(`/anime/${id}?fields=alternative_titles,num_episodes,media_type,my_list_status,start_season`);
   }
+  async watchList() {
+    const entries = new Map();
+    let offset = 0;
+    for (let page = 0; page < 50; page++) {
+      const params = new URLSearchParams({limit: '1000', offset: String(offset), nsfw: 'true', sort: 'list_updated_at', fields: 'list_status,num_episodes,alternative_titles,media_type'});
+      const result = await this.request(`/users/@me/animelist?${params}`);
+      if (!Array.isArray(result.data)) throw new Error('MAL returned an invalid anime list. Your previous imported progress is unchanged.');
+      for (const item of result.data) {
+        const node = item.node, status = item.list_status;
+        if (!Number.isInteger(node?.id) || node.id < 1 || typeof node.title !== 'string' || !Number.isInteger(status?.num_episodes_watched) || status.num_episodes_watched < 0) throw new Error('MAL returned an invalid progress entry. Your previous imported progress is unchanged.');
+        entries.set(node.id, {id: node.id, title: node.title.slice(0, 180), alternative_titles: node.alternative_titles || {}, media_type: node.media_type || 'tv', num_episodes: node.num_episodes || 0, list_status: {status: status.status, num_episodes_watched: status.num_episodes_watched, is_rewatching: !!status.is_rewatching, updated_at: status.updated_at || null}});
+      }
+      if (!result.paging?.next) return [...entries.values()];
+      const next = new URL(result.paging.next), base = new URL(API);
+      const nextOffset = Number(next.searchParams.get('offset'));
+      if (next.origin !== base.origin || next.pathname !== `${base.pathname}/users/@me/animelist` || !Number.isInteger(nextOffset) || nextOffset <= offset) throw new Error('MAL returned invalid list pagination. Your previous imported progress is unchanged.');
+      offset = nextOffset;
+    }
+    throw new Error('MAL returned too many list pages. Your previous imported progress is unchanged.');
+  }
   async update(id, plan) {
     return this.request(`/anime/${id}/my_list_status`, {method: 'PATCH', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams(plan).toString()});
   }

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 from urllib.parse import urlparse, parse_qs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ RESULTS = ROOT / "test-results"
 RESULTS.mkdir(exist_ok=True)
 NETWORK = "--network" in sys.argv
 UPGRADE = "--upgrade" in sys.argv
+CLOUD = "--cloud" in sys.argv
 POSITIONAL = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
 BINARY = POSITIONAL[0] if POSITIONAL else "/Applications/Zen.app/Contents/MacOS/zen"
 
@@ -87,6 +89,13 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path.startswith('/mal/v2/'):
+            status = {'status': 'watching', 'num_episodes_watched': 7, 'is_rewatching': False, 'updated_at': '2026-11-01T12:00:00+00:00'}
+            node = {'id': 52991, 'title': 'Frieren', 'alternative_titles': {'en': 'Frieren'}, 'num_episodes': 28, 'media_type': 'tv'}
+            body = {'data': [{'node': node, 'list_status': status}], 'paging': {}} if '/animelist' in self.path else {**node, 'my_list_status': status}
+            data = json.dumps(body).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+            return
         # A generated PCM audio file is served through a video element to exercise
         # actual media timeupdates without a downloaded or copyrighted fixture.
         if self.path == "/episode.wav":
@@ -106,7 +115,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
                 html = '<title>Embedded Player</title><video controls autoplay muted src="/episode.wav"></video>'
             else:
                 episode = int(parse_qs(urlparse(self.path).query).get('episode', ['3'])[0])
-                html = f'<title>Frieren S01E{episode:02d} | Test Stream</title><style>body{{background:#111820;color:#eee;font:18px sans-serif;padding:40px}}iframe{{display:block;width:85%;height:400px;border:1px solid #35404e;margin:30px 0}}a{{color:#b6f07b;margin-right:25px}}</style><h1>Frieren</h1><iframe src="http://localhost:{self.server.server_port}/player"></iframe><nav class="episodes"><a href="/watch?episode=1">Episode 1</a><a href="/watch?episode=3">Episode 3</a><a href="/watch?episode=5">Episode 5</a></nav>'
+                html = f'<title>Frieren S01E{episode:02d} | Test Stream</title><style>body{{background:#111820;color:#eee;font:18px sans-serif;padding:40px}}iframe{{display:block;width:85%;height:400px;border:1px solid #35404e;margin:30px 0}}a{{color:#b6f07b;margin-right:25px}}</style><h1>Frieren</h1><iframe src="http://localhost:{self.server.server_port}/player"></iframe><nav class="episodes"><a href="/watch?episode=1">Episode 1</a><a href="/watch?episode=3">Episode 3</a><a href="/watch?episode=5">Episode 5</a><a href="/watch?episode=8">Episode 8</a></nav>'
             data = html.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -115,13 +124,31 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         with contextlib.suppress(BrokenPipeError, ConnectionResetError):
             self.wfile.write(data)
 
+    def do_PATCH(self):
+        self.server.mal_writes.append(self.rfile.read(int(self.headers.get('Content-Length', 0))).decode())
+        data = b'{"status":"watching","num_episodes_watched":7}'
+        self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+
 
 def main():
+    assert not (CLOUD and NETWORK), 'Use --cloud and --network in separate test runs.'
     subprocess.run([sys.executable, str(ROOT / "scripts/package.py")], check=True)
     manifest = json.loads((ROOT / "extension/manifest.json").read_text())
     archive = ROOT / f'dist/anime-trail-{manifest["version"]}.zip'
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
+    server.mal_writes = []
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    if CLOUD:
+        # Test-only copy: direct the actual MAL client to a loopback API fixture.
+        # The production ZIP and all other production sources stay untouched.
+        test_archive = RESULTS / 'cloud-test-extension.zip'
+        with zipfile.ZipFile(archive) as source, zipfile.ZipFile(test_archive, 'w', zipfile.ZIP_DEFLATED) as target:
+            for name in source.namelist():
+                data = source.read(name)
+                if name == 'lib/mal.js':
+                    data = data.replace(b"const API = 'https://api.myanimelist.net/v2';", f"const API = 'http://127.0.0.1:{server.server_port}/mal/v2';".encode())
+                target.writestr(name, data)
+        archive = test_archive
     with tempfile.TemporaryDirectory(prefix="anime-trail-smoke-") as profile:
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
@@ -226,6 +253,24 @@ def main():
             assert mn.rpc("view")["settings"]["threshold"] == 75
             print("PASS: extension loads, options render, preferences save", flush=True)
             fixture = f"http://127.0.0.1:{server.server_port}/watch"
+            if CLOUD:
+                mn.rpc('settings', settings={'autoSync': False})
+                mn.script("const done=arguments[arguments.length-1];browser.storage.local.set({auth:{accessToken:'test-only-token',refreshToken:'test-only-refresh',expiresAt:Date.now()+3600000,clientId:'fixture',user:{id:42,name:'FixtureViewer'}}}).then(done);", True)
+                assert not mn.rpc('view')['history']
+                mn.navigate(fixture + '?episode=1')
+                mn.wait("document.querySelector('[data-anime-trail-resume]')?.shadowRoot?.textContent.includes('MyAnimeList has you through episode 7')", timeout=35)
+                assert mn.script("return document.querySelector('[data-anime-trail-resume]').shadowRoot.querySelector('.primary').textContent==='Continue episode 8';")
+                mn.screenshot('resume-from-mal.png')
+                mn.script("document.querySelector('[data-anime-trail-resume]').shadowRoot.querySelector('.primary').click();")
+                mn.wait("location.search==='?episode=8'")
+                print('PASS: fresh-PC empty history imports MAL progress and continues to episode 8', flush=True)
+                mn.navigate(origin + '/ui/options.html')
+                mn.wait("document.getElementById('mal-progress')?.textContent.includes('7 / 28 episodes watched')")
+                assert mn.rpc('view')['malProgress']['anime']['52991']['list_status']['num_episodes_watched'] == 7
+                mn.rpc('sync')
+                assert not server.mal_writes, server.mal_writes
+                print('PASS: shared MAL library renders and older local episodes do not overwrite remote progress', flush=True)
+                mn.script("const done=arguments[arguments.length-1];browser.storage.local.remove('auth').then(()=>browser.storage.local.set({state:{settings:{enabled:true,autoSync:true,threshold:75,resumePrompts:true},history:{},mappings:{},queue:{}}})).then(done);", True)
             mn.navigate(fixture)
             time.sleep(8)
             mn.command("WebDriver:SwitchToFrame", {"id": 0})

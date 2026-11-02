@@ -1,5 +1,5 @@
 import {$, rpc, el, notice, action, historyItem} from './shared.js';
-let view, limit = 30;
+let view, limit = 30, malLimit = 30;
 async function refresh(populate = false) {
   view = await rpc('view');
   $('redirect').textContent = view.redirectUri;
@@ -15,7 +15,31 @@ async function refresh(populate = false) {
     $('excluded').value = view.settings.excludedHosts.join('\n'); $('rules').value = JSON.stringify(view.settings.rules, null, 2);
   }
   renderHistory();
+  renderMalProgress();
 }
+function renderMalProgress() {
+  const cache = view.malProgress, query = $('mal-filter').value.trim().toLowerCase();
+  const entries = Object.values(cache?.anime || {}).filter(entry => entry.title.toLowerCase().includes(query) || entry.alternative_titles?.en?.toLowerCase().includes(query))
+    .sort((a, b) => (b.list_status.updated_at || '').localeCompare(a.list_status.updated_at || '') || a.title.localeCompare(b.title));
+  $('mal-progress-status').textContent = view.malProgressError ? `Refresh failed: ${view.malProgressError}${cache ? ' Showing the last successful import.' : ''}` : cache ? `${Object.keys(cache.anime).length} series · refreshed ${new Date(cache.fetchedAt).toLocaleString()}` : view.connected ? 'Your shared progress is ready to import.' : 'Connect MyAnimeList to load your shared progress.';
+  $('mal-progress').replaceChildren(...entries.slice(0, malLimit).map(entry => {
+    const count = entry.list_status.num_episodes_watched;
+    const finished = entry.list_status.status === 'completed' && !entry.list_status.is_rewatching || entry.num_episodes > 0 && count >= entry.num_episodes;
+    return el('div', {class: 'history-item'}, [el('div', {class: 'episode-icon', text: String(count)}), el('div', {class: 'history-main'}, [
+      el('strong', {text: entry.title}),
+      el('p', {class: 'meta', text: `${count} / ${entry.num_episodes || '?'} episodes watched · ${finished ? 'Completed' : `Next: episode ${count + 1}`} · ${entry.list_status.status?.replaceAll('_', ' ') || 'On your list'}`}),
+      el('a', {class: 'meta', text: 'View on MyAnimeList ↗', href: `https://myanimelist.net/anime/${entry.id}`, target: '_blank', rel: 'noopener noreferrer'})
+    ])]);
+  }));
+  if (!entries.length) $('mal-progress').append(el('p', {class: 'empty', text: query ? 'No series match your search.' : cache ? 'Your MAL anime list is empty.' : 'Your MAL episode counts will appear here. Local history is kept separately.'}));
+  $('mal-show-more').hidden = entries.length <= malLimit;
+}
+$('mal-filter').addEventListener('input', () => { malLimit = 30; renderMalProgress(); });
+$('mal-show-more').addEventListener('click', () => { malLimit += 30; renderMalProgress(); });
+$('pull-mal').addEventListener('click', event => action(event.currentTarget, async () => {
+  const result = await rpc('pullProgress'); await refresh();
+  notice(result.skipped ? result.reason : `Loaded ${result.count || 0} series from MyAnimeList.`, !!result.skipped);
+}));
 function renderHistory() {
   const query = $('filter').value.toLowerCase();
   const records = view.history.filter(r => r.title.toLowerCase().includes(query));
@@ -38,7 +62,10 @@ $('client-form').addEventListener('submit', event => { event.preventDefault(); a
 }); });
 $('authorize').addEventListener('click', event => action(event.currentTarget, async () => {
   await rpc('settings', {settings: {clientId: $('client-id').value.trim()}});
-  notice('Complete the MyAnimeList login in the authorization window.'); await rpc('connect'); await refresh(); notice('MyAnimeList connected. Automatic sync runs about once a minute.');
+  notice('Complete the MyAnimeList login in the authorization window.'); await rpc('connect');
+  notice('Connected. Loading your progress from MyAnimeList…');
+  try { await rpc('pullProgress'); await refresh(); notice('Connected and imported your MAL progress. Your next episode is available on this PC.'); }
+  catch (error) { await refresh(); notice(`Connected, but progress could not be imported yet: ${error.message}`, true); }
 }));
 $('test-connection').addEventListener('click', event => action(event.currentTarget, async () => {
   notice('Checking the MAL login server and anime API…');
@@ -68,3 +95,6 @@ $('export').addEventListener('click', event => action(event.currentTarget, async
   notice('Watch history exported. It includes watch-page URLs; keep it private.');
 }));
 action(null, () => refresh(true));
+browser.storage.onChanged.addListener(changes => {
+  if (changes.state && JSON.stringify(changes.state.oldValue?.malProgress) !== JSON.stringify(changes.state.newValue?.malProgress)) refresh().catch(() => {});
+});

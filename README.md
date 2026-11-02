@@ -2,6 +2,26 @@
 
 A Firefox / Zen WebExtension that keeps anime episode progress across websites and adds watched anime to MyAnimeList.
 
+## Update 1.2.0 — Shared progress between PCs
+
+Install Anime Trail in Firefox/Zen on each computer and connect the **same MyAnimeList account**. You can reuse your existing public MAL Client ID; authorize each browser separately. Your MAL list is imported automatically after connecting, when playback starts, and during background sync. Successful imports are cached for five minutes; **Refresh from MAL** in settings or **Sync now** forces a refresh.
+
+For example: finish episode 7 on PC A and let it sync to MAL. On PC B, even with no local history, opening episode 1 produces **“MyAnimeList has you through episode 7; episode 8 is next.”** Continue follows a suitable episode link on the current website. If the site hides its episode links, the prompt tells you which episode to choose in its selector. Anime titles/seasons are matched against the imported MAL list; ambiguous matches still need selecting the correct MAL entry.
+
+Settings now has a **MyAnimeList progress** library with shared episode counts, next episodes, and a last-refresh time. This browser’s detailed watch history remains separate. Local timestamps for the next unwatched episode are preserved; stale local episodes cannot override a higher MAL episode count. Unsynced progress further ahead on this PC is retained. Imports happen before planning outgoing updates and do not mark episodes watched locally or reduce MAL counts.
+
+**MAL stores episode counts, not playback timestamps or streaming URLs.** Cross-PC continuation therefore starts at your next unwatched episode. An unfinished episode’s exact timestamp, custom site rules, manual title mappings, and watch-page links stay in the browser where they were recorded. Finishing/marking an episode watched on PC A must sync successfully before PC B can learn that progress. No additional cloud service or Firefox Sync account is required.
+
+Imported lists are scoped to the connected MAL account. Disconnecting clears the imported cache while retaining local history; an account switch discards in-flight results from the old account. Failed imports retain the previous cache for offline use. Turning off automatic **writes** still permits reading your MAL progress; pausing tracking stops background progress refreshes too.
+
+Load `dist/anime-trail-1.2.0.zip` over the existing temporary add-on without uninstalling, or Reload if you loaded `extension/manifest.json` directly. Reload watch pages after the update. History, login and the extension ID are preserved.
+
+The fresh-PC browser test uses an empty disposable profile and a loopback MAL API fixture, without reading or modifying a real account:
+
+```sh
+python3 scripts/smoke.py /Applications/Twilight.app/Contents/MacOS/zen --cloud
+```
+
 ## Update 1.1.0 — Continue where you left off
 
 When playback starts on an episode that differs from your most recent saved progress for that anime/season, a small on-page prompt offers **Continue where you left off**. It shows the current episode and the saved episode/time. Opening the same episode at the beginning offers to resume its saved timestamp. The saved timestamp is preserved while the prompt is waiting for your choice.
@@ -10,7 +30,7 @@ When playback starts on an episode that differs from your most recent saved prog
 - After you choose Continue, the correct detected episode resumes at its saved time, including when playback is in a cross-origin iframe. It only seeks after that episode is detected; it never relabels the current video as another episode.
 - **Stay on episode…**, **Start here**, the close button, or Escape while focused in the prompt dismisses it for that visit. It does not pause or seek without your choice. Reloading the page or changing episodes starts a new visit.
 - If you finished the most recent episode, the prompt suggests the next episode. If the current site exposes no suitable next-episode link, it offers your last watch page and asks you to use that site’s episode selector. Known completed MAL entries do not suggest an episode beyond their total.
-- Matches use normalized title and season, or a shared MAL entry plus your episode offsets for linked aliases. No additional network lookup is needed for the prompt.
+- Matches use normalized title and season, or a shared MAL entry plus your episode offsets for linked aliases. The prompt combines local history with the imported MAL list.
 - Turn it off with **Settings → Tracking preferences → Offer to continue where I left off**.
 
 Load `dist/anime-trail-1.1.0.zip` over your existing temporary add-on through `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…**, or click **Reload** if you loaded `extension/manifest.json` directly. Keep the existing add-on installed to preserve history and MAL login. Reload open watch pages after updating. The extension ID and permissions are unchanged.
@@ -51,6 +71,7 @@ Temporary add-ons are removed when the browser closes. For persistent installati
 - Adds linked shows to your MAL list as **Watching**, without prematurely counting the current episode. Once an episode is watched, updates the count, and marks known finales **Completed**. Existing completed status and higher episode counts are preserved; scores and unrelated list fields are never changed.
 - Counts an episode watched after **80% unique coverage plus 120 seconds of playback**, configurable in settings. Skipping ahead does not count the skipped portion. Replaying a portion does not increase unique coverage. You can also mark an episode watched manually.
 - Retries failed MAL updates with backoff. Local progress persists without a network connection or MAL login. Background sync runs about once a minute and processes a bounded batch; large backlogs take multiple runs.
+- Imports the complete, paginated MAL anime list and uses shared counts to offer your next episode on another PC. Imported progress is cached separately from local timestamps and history.
 - Provides tracking pause, automatic-sync toggle, excluded hostnames, JSON history export, and custom CSS selector rules.
 
 ## Correcting a detection or MAL match
@@ -119,7 +140,7 @@ python3 scripts/smoke.py /Applications/Zen.app/Contents/MacOS/zen
 # or provide the path to a Firefox executable
 ```
 
-This starts an isolated temporary browser profile, installs the unsigned extension temporarily, and serves generated test media over loopback. It checks options, preferences, real cross-origin iframe playback, mismatched-episode prompts, navigation and timestamp resume, dismissal, history actions, and toolbar popup controls. It writes screenshots and a browser log to `test-results/`. The user's existing profile is never opened. It does not contact MAL unless `--network` is specified, and never modifies a real account.
+This starts an isolated temporary browser profile, installs the unsigned extension temporarily, and serves generated test media over loopback. It checks options, preferences, real cross-origin iframe playback, mismatched-episode prompts, navigation and timestamp resume, dismissal, history actions, and toolbar popup controls. With `--cloud`, a test-only copy of the extension points to a local mock MAL API and verifies automatic imports, episode continuation with empty local history, and protection against overwriting higher remote counts. The production ZIP is unchanged by this fixture. It writes screenshots and a browser log to `test-results/`. The user's existing profile is never opened. It does not contact MAL unless `--network` is specified, and never modifies a real account.
 
 Automated tests exercise parsing, season resolution, watched coverage, seek rejection, storage serialization, offline queues, monotonic MAL updates, PKCE state/redirect validation, token refresh, and form-encoded API requests. MAL requests are mocked. A live end-to-end account sync requires a real API client and account authorization.
 

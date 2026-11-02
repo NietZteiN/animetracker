@@ -20,6 +20,7 @@ export function setup(malOverrides = {}) {
   const mal = {
     auth: async () => ({user: {id: 1, name: 'tester'}}),
     search: async () => [{id: 52991, title: 'Frieren', num_episodes: 28, media_type: 'tv'}],
+    watchList: async () => [],
     detail: async id => ({id, title: 'Frieren', num_episodes: 28, my_list_status: {status: 'watching', num_episodes_watched: 2}}),
     update: async (id, plan) => { updates.push({id, plan}); return {}; },
     disconnect: async () => {}, ...malOverrides

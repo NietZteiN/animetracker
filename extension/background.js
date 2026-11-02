@@ -10,7 +10,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
   let task;
   if (content) {
     if (message.type === 'contentConfig') task = controller.config(sender);
-    else if (message.type === 'observe') task = store.run(() => controller.observe(message, sender));
+    else if (message.type === 'observe') task = store.run(() => controller.observe(message, sender)).then(data => {
+      if (message.sample?.playing) controller.pullProgress().catch(() => {});
+      return data;
+    });
     else if (message.type === 'resumeAction') task = store.run(() => controller.resumeAction(message, sender));
     else return undefined;
   } else {
@@ -28,8 +31,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
         return {version: 1, exportedAt: new Date().toISOString(), history: state.history, mappings: state.mappings};
       }
     };
-    if (message.type === 'connect') task = store.load().then(s => mal.connect(s.settings.clientId));
-    else if (message.type === 'disconnect') task = mal.disconnect();
+    if (message.type === 'connect') task = store.load().then(s => mal.connect(s.settings.clientId)).then(user => { controller.pullProgress(true).catch(() => {}); return user; });
+    else if (message.type === 'disconnect') task = controller.disconnect();
+    else if (message.type === 'pullProgress') task = controller.pullProgress(true);
     else if (message.type === 'testConnection') task = mal.testConnection();
     else if (message.type === 'sync') task = sync(true);
     else if (operations[message.type]) task = store.run(operations[message.type]);
@@ -43,4 +47,4 @@ browser.runtime.onInstalled.addListener(async ({reason}) => {
   await browser.alarms.create('sync', {periodInMinutes: 1});
   if (reason === 'install') browser.runtime.openOptionsPage();
 });
-browser.runtime.onStartup.addListener(() => { browser.alarms.create('sync', {periodInMinutes: 1}); });
+browser.runtime.onStartup.addListener(() => { browser.alarms.create('sync', {periodInMinutes: 1}); controller.pullProgress().catch(() => {}); });

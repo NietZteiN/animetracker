@@ -45,7 +45,8 @@
   browser.runtime.onMessage.addListener((message, sender) => {
     if (sender.id !== browser.runtime.id || !config.enabled) return undefined;
     if (message.type === 'animeTrailResumeOffer' && config.resumePrompts && window === window.top) {
-      globalThis.AnimeTrailResumeUI.show(message.offer); return Promise.resolve({ok: true});
+      if (message.offer) globalThis.AnimeTrailResumeUI.show(message.offer); else globalThis.AnimeTrailResumeUI.hide();
+      return Promise.resolve({ok: true});
     }
     if (message.type !== 'animeTrailSeek') return undefined;
     const video = videos().find(v => players.has(v) && mediaId(v) === message.mediaId);
