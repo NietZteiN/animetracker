@@ -145,6 +145,18 @@ npx web-ext run --source-dir extension --firefox /path/to/firefox
 
 The build writes unpacked folders in `dist/firefox/` and `dist/chrome/`, plus a reproducible ZIP and SHA-256 checksum for each browser. The original Firefox ZIP name is preserved. `scripts/package.py` remains a compatibility wrapper for the Node build. Archives contain only extension files, with a browser-specific manifest at the root. Test tools and `node_modules/` are never shipped. `web-ext` currently pulls upstream development-only audit advisories; this code has no production npm dependencies.
 
+### Automatic release downloads
+
+After this workflow is merged, maintainers can publish a GitHub release from a commit containing it. Set the same version in `package.json`, `package-lock.json`, and `extension/manifest.json`, then publish a release tagged `v1.2.0` (or `1.2.0`, replacing the version as appropriate). Publishing a release, including a prerelease, runs the tests, lint, and Chromium smoke test before attaching these files to its **Assets**:
+
+- `anime-trail-1.2.0-chrome.zip` — Chrome extension, ready to extract and load.
+- `anime-trail-1.2.0.zip` — Firefox/Zen development extension.
+- A `.sha256` checksum file for each ZIP.
+
+Downloads appear when the **Package release downloads** workflow finishes successfully. Draft releases and ordinary branch pushes do not publish downloads. A mismatched release tag fails before packaging; fix the version/tag and publish the correct release. Failed runs can be rerun from Actions; reruns replace assets with the same filenames. The workflow uses GitHub's built-in token and needs no additional secrets.
+
+Chrome users can open the repository's **Releases**, download the ZIP ending in `-chrome.zip`, and extract it into a permanent folder. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder containing `manifest.json`. No Node installation or build commands are required. Firefox downloads still require Mozilla signing for persistent installation.
+
 ### Chrome browser smoke test
 
 ```sh
