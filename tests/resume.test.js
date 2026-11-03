@@ -100,6 +100,7 @@ const uiScript = readFileSync(new URL('../extension/resume-ui.js', import.meta.u
 function uiPage(html = '') {
   const dom = new JSDOM(html, {url: 'https://watch.example/watch/episode-1', runScripts: 'outside-only'});
   dom.window.browser = {runtime: {sendMessage: async () => ({ok: true})}};
+  dom.window.eval(readFileSync(new URL('../extension/lib/browser.js', import.meta.url), 'utf8'));
   dom.window.eval(detectionScript); dom.window.eval(uiScript);
   return dom;
 }

@@ -1,4 +1,5 @@
 (() => {
+  const {browser} = globalThis.AnimeTrailBrowser;
   const {parseLabel, normalize, cleanTitle} = globalThis.AnimeTrailDetection;
   const stamp = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   const make = (tag, text, attributes = {}) => {

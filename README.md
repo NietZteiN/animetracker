@@ -1,6 +1,6 @@
 # Anime Trail
 
-A Firefox / Zen WebExtension that keeps anime episode progress across websites and adds watched anime to MyAnimeList.
+A Chrome / Firefox / Zen WebExtension that keeps anime episode progress across websites and adds watched anime to MyAnimeList.
 
 ## Update 1.2.0 — Shared progress between PCs
 
@@ -51,7 +51,19 @@ The isolated browser test can verify storage survives an upgrade and test real c
 python3 scripts/smoke.py /Applications/Twilight.app/Contents/MacOS/zen --network --upgrade
 ```
 
-## Install and connect
+## Chrome installation
+
+1. Run `npm ci` and `npm run build` (Node.js 22.22.2+; Python is not needed for builds).
+2. In **Chrome 120+**, open `chrome://extensions` and enable **Developer mode**.
+3. Choose **Load unpacked** and select the generated **`dist/chrome/` folder**. Keep this folder in the same location when updating.
+4. Open Anime Trail settings and follow the MAL setup below. Copy the **Chrome redirect URL shown in settings** into your MAL API client. Chrome and Firefox use different redirect URLs; configure an appropriate MAL client for each browser. Do not reuse a Firefox redirect URL in Chrome.
+5. Reload open watch pages and pin the extension for quick access.
+
+For updates, rebuild into the same folder and click **Reload** on the extension card, then reload watch pages. This preserves the unpacked extension ID and local history. Loading a different folder or uninstalling can change the ID or remove storage; recheck the redirect URL if the ID changes.
+
+The Chrome archive is `dist/anime-trail-1.2.0-chrome.zip`; extract it before using Load unpacked. The Firefox manifest in `extension/` is not a Chrome package. Store publication is separate from this development installation and requires the maintainer's developer account.
+
+## Firefox / Zen installation and MAL setup
 
 1. In **Firefox or Zen 142+**, open `about:debugging#/runtime/this-firefox`.
 2. Choose **Load Temporary Add-on…**, then select [`extension/manifest.json`](extension/manifest.json) or the ZIP in `dist/`.
@@ -86,6 +98,8 @@ History’s **Open page** link opens the saved watch page. The on-page resume pr
 
 ## Coverage and limits
 
+If a manual correction saves but the timestamp stays on **Waiting for playback**, check the player status at the top of the popup. It distinguishes a missing page connection, missing settings, sampling failure, no visible video, paused playback, and a video whose duration is not ready. After updating an unpacked extension, click **Reload** on its card in `chrome://extensions`, then fully reload the watch page before testing. The popup also offers **Reload watch page** when it cannot connect. A working login or toolbar icon alone does not establish that the page script is running.
+
 There is no browser-only way to guarantee identification on every website. If a page exposes only an opaque identifier, uses an inaccessible player, or supplies no anime/episode metadata, use the manual correction. This extension does not recognize anime from video imagery or audio, bypass DRM, or use a remote recognition service.
 
 Firefox system pages and restricted domains cannot run content scripts. Private windows are excluded. Live streams, clips shorter than a minute, fractional episode numbers, and inaccessible closed-shadow players are not automatically tracked. Separate frames choose the longest active video as the likely episode; unusual ad/player arrangements may need a correction. A buffered player must actually advance its media clock for coverage to accumulate. Browser suspension or long throttled timer gaps do not count toward watched coverage. Episode numbering alone cannot establish the right MAL season.
@@ -115,7 +129,7 @@ See [PRIVACY.md](PRIVACY.md). There are no runtime npm dependencies, analytics, 
 
 ## Development
 
-Requires Node.js 22+ and Python 3.10+:
+Requires Node.js 22.22.2+ (or 24.15.0+). Python 3.10+ is only needed for the Firefox smoke test:
 
 ```sh
 npm ci
@@ -131,9 +145,30 @@ npm start
 npx web-ext run --source-dir extension --firefox /path/to/firefox
 ```
 
-The ZIP contains only `extension/` files, with the manifest at its root. `scripts/package.py` also writes a SHA-256 checksum. Test tools and `node_modules/` are never shipped. `web-ext` currently pulls upstream development-only audit advisories; this code has no production npm dependencies.
+The build writes unpacked folders in `dist/firefox/` and `dist/chrome/`, plus a reproducible ZIP and SHA-256 checksum for each browser. The original Firefox ZIP name is preserved. `scripts/package.py` remains a compatibility wrapper for the Node build. Archives contain only extension files, with a browser-specific manifest at the root. Test tools and `node_modules/` are never shipped. `web-ext` currently pulls upstream development-only audit advisories; this code has no production npm dependencies.
 
-### Browser smoke test
+### Automatic release downloads
+
+After this workflow is merged, maintainers can publish a GitHub release from a commit containing it. Set the same version in `package.json`, `package-lock.json`, and `extension/manifest.json`, then publish a release tagged `v1.2.0` (or `1.2.0`, replacing the version as appropriate). Publishing a release, including a prerelease, runs the tests, lint, and Chromium smoke test before attaching these files to its **Assets**:
+
+- `anime-trail-1.2.0-chrome.zip` — Chrome extension, ready to extract and load.
+- `anime-trail-1.2.0.zip` — Firefox/Zen development extension.
+- A `.sha256` checksum file for each ZIP.
+
+Downloads appear when the **Package release downloads** workflow finishes successfully. Draft releases and ordinary branch pushes do not publish downloads. A mismatched release tag fails before packaging; fix the version/tag and publish the correct release. Failed runs can be rerun from Actions; reruns replace assets with the same filenames. The workflow uses GitHub's built-in token and needs no additional secrets.
+
+Chrome users can open the repository's **Releases**, download the ZIP ending in `-chrome.zip`, and extract it into a permanent folder. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder containing `manifest.json`. No Node installation or build commands are required. Firefox downloads still require Mozilla signing for persistent installation.
+
+### Chrome browser smoke test
+
+```sh
+npx playwright install chromium
+npm run smoke:chrome
+```
+
+On Linux CI, use `npx playwright install --with-deps chromium` first. This uses Playwright's Chromium in a disposable profile, not your installed Chrome profile. Generated loopback media verifies options, the Chrome OAuth redirect, real cross-origin iframe playback, saved history, the resume prompt and iframe seeking, popup pause/resume, and persistence after a forced service-worker restart. It never connects to a real MAL account. MAL OAuth and API behavior are covered by mocked unit tests; real-account authorization still needs a manual check with your own client.
+
+### Firefox browser smoke test
 
 ```sh
 python3 scripts/smoke.py /Applications/Zen.app/Contents/MacOS/zen
@@ -157,3 +192,5 @@ Automated tests exercise parsing, season resolution, watched coverage, seek reje
 - `extension/ui/`: popup, setup/settings, and history.
 
 Uses Firefox Manifest V3 [event-page background scripts](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Background_scripts) and [`identity.launchWebAuthFlow`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/identity/launchWebAuthFlow). API behavior follows the [official MAL OAuth reference](https://myanimelist.net/apiconfig/references/authorization) (currently `plain` PKCE) and [MAL API v2](https://myanimelist.net/apiconfig/references/api/v2) (`PATCH /anime/{id}/my_list_status`, `num_watched_episodes` in requests and `num_episodes_watched` in responses). [Firefox data transmission disclosures](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/) are declared in the manifest. Persistent releases require [Mozilla signing](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
+
+Chrome uses a Manifest V3 [module service worker](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics), [callback-compatible async message replies](https://developer.chrome.com/docs/extensions/develop/concepts/messaging), and [PNG manifest icons](https://developer.chrome.com/docs/extensions/reference/manifest/icons). Firefox keeps its existing event-page background and add-on ID. Both builds share the same tracking and MAL code.

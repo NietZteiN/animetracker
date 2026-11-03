@@ -1,11 +1,12 @@
 (() => {
+  const {browser, onMessage} = globalThis.AnimeTrailBrowser;
   if (globalThis.__animeTrailLoaded) return;
   globalThis.__animeTrailLoaded = true;
   const {detect, snapshot} = globalThis.AnimeTrailDetection;
   // randomUUID is restricted to secure contexts; HTTP streaming pages still work.
   const uniqueId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   const documentId = uniqueId();
-  let config = {enabled: false}, lastFingerprint = '', busy = false, scanTimer, pageContext = '';
+  let config = {enabled: false}, configured = false, lastScanError = '', lastFingerprint = '', busy = false, scanTimer, pageContext = '';
   const players = new WeakMap();
   const mediaId = video => `${documentId}:${players.get(video)}:${video.currentSrc}`.slice(0, 150);
   function videos(root = document, result = []) {
@@ -39,11 +40,20 @@
         if (result && !result.ok) console.warn('Anime Trail:', result.error);
         if (result?.ok) lastFingerprint = fingerprint;
       }
-    } catch (error) { console.debug('Anime Trail scan:', error.message); }
+      lastScanError = '';
+    } catch (error) { lastScanError = error.message; console.debug('Anime Trail scan:', error.message); }
     finally { busy = false; }
   }
-  browser.runtime.onMessage.addListener((message, sender) => {
-    if (sender.id !== browser.runtime.id || !config.enabled) return undefined;
+  onMessage((message, sender) => {
+    if (sender.id !== browser.runtime.id) return undefined;
+    if (message.type === 'animeTrailStatus') {
+      const found = videos();
+      return Promise.resolve({ok: true, configured, enabled: config.enabled, videoCount: found.length,
+        playingCount: found.filter(v => !v.paused && !v.ended).length,
+        trackableCount: found.filter(v => !v.paused && !v.ended && v.readyState >= 2 && Number.isFinite(v.duration) && v.duration >= 60).length,
+        scanFailed: !!lastScanError});
+    }
+    if (!config.enabled) return undefined;
     if (message.type === 'animeTrailResumeOffer' && config.resumePrompts && window === window.top) {
       if (message.offer) globalThis.AnimeTrailResumeUI.show(message.offer); else globalThis.AnimeTrailResumeUI.hide();
       return Promise.resolve({ok: true});
@@ -65,7 +75,7 @@
     });
   });
   async function configure() {
-    try { const result = await browser.runtime.sendMessage({type: 'contentConfig'}); if (result?.ok) config = result.data; if (!config.enabled || !config.resumePrompts) globalThis.AnimeTrailResumeUI.hide(); await scan(true); } catch (error) { console.debug('Anime Trail configuration:', error.message); }
+    try { const result = await browser.runtime.sendMessage({type: 'contentConfig'}); if (result?.ok) { config = result.data; configured = true; } if (!config.enabled || !config.resumePrompts) globalThis.AnimeTrailResumeUI.hide(); await scan(true); } catch (error) { console.debug('Anime Trail configuration:', error.message); }
   }
   browser.storage.onChanged.addListener(changes => {
     if (changes.state && JSON.stringify(changes.state.oldValue?.settings) !== JSON.stringify(changes.state.newValue?.settings)) configure();

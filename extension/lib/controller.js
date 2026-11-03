@@ -273,11 +273,22 @@ export class Controller {
   }
   async view(tabId) {
     const state = await this.store.load(), auth = await this.mal.auth();
-    let session = tabId != null ? await this.store.session(tabId) : {};
+    let session = tabId != null ? await this.store.session(tabId) : {}, playback = null;
     if (tabId != null) {
       try {
         const tab = await this.browser.tabs.get(tabId);
         if (session.url !== safeUrl(tab.url) || tab.incognito || excluded(new URL(tab.url).hostname, state.settings.excludedHosts)) session = {};
+        if (safeUrl(tab.url) && !tab.incognito && !excluded(new URL(tab.url).hostname, state.settings.excludedHosts)) {
+          try {
+            let timer;
+            const status = await Promise.race([
+              this.browser.tabs.sendMessage(tabId, {type: 'animeTrailStatus'}, {frameId: 0}),
+              new Promise(resolve => { timer = setTimeout(() => resolve(null), 1500); })
+            ]).finally(() => clearTimeout(timer));
+            if (status?.ok && typeof status.videoCount === 'number') playback = {...status, connected: true};
+            else playback = {connected: false};
+          } catch { playback = {connected: false}; }
+        }
       } catch { session = {}; }
     }
     let current = session.manual || session.candidate || (session.key && state.history[session.key]) || null;
@@ -287,7 +298,7 @@ export class Controller {
     }
     const history = Object.values(state.history).sort((a, b) => b.lastSeen - a.lastSeen);
     const malProgress = auth?.user?.id === state.malProgress?.userId ? state.malProgress : null;
-    return {settings: state.settings, connected: !!auth, user: auth?.user, redirectUri: this.browser.identity.getRedirectURL(), current, history, mappings: state.mappings, malProgress, malProgressError: auth ? state.malProgressError || null : null, pending: Object.keys(state.queue).length};
+    return {settings: state.settings, connected: !!auth, user: auth?.user, redirectUri: this.browser.identity.getRedirectURL(), current, history, mappings: state.mappings, malProgress, malProgressError: auth ? state.malProgressError || null : null, pending: Object.keys(state.queue).length, playback};
   }
   async settings(input) {
     const state = await this.store.load();

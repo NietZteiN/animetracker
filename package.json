@@ -6,11 +6,14 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "lint": "web-ext lint --source-dir extension --warnings-as-errors",
-    "build": "python3 scripts/package.py",
+    "build": "node scripts/package.mjs",
+    "smoke:chrome": "npm run build && node scripts/smoke-chrome.mjs",
     "start": "web-ext run --source-dir extension --firefox /Applications/Zen.app/Contents/MacOS/zen"
   },
   "devDependencies": {
+    "adm-zip": "^0.6.1",
     "jsdom": "^30.1.3",
+    "playwright": "^1.64.1",
     "web-ext": "^10.8.0"
   }
 }

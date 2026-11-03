@@ -1,4 +1,4 @@
-import {$, rpc, el, notice, action, historyItem} from './shared.js';
+import {browser, $, rpc, el, notice, action, historyItem} from './shared.js';
 let view, limit = 30, malLimit = 30;
 async function refresh(populate = false) {
   view = await rpc('view');
