@@ -1,4 +1,4 @@
-import {$, rpc, el, notice, action, episodeLabel, time, historyItem} from './shared.js';
+import {browser, $, rpc, el, notice, action, episodeLabel, time, historyItem} from './shared.js';
 let tabId, view, current;
 async function refresh() {
   view = await rpc('view', {tabId}); current = view.current;

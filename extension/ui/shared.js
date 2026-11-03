@@ -1,3 +1,5 @@
+import '../lib/browser.js';
+export const {browser} = globalThis.AnimeTrailBrowser;
 export const $ = id => document.getElementById(id);
 export async function rpc(type, payload = {}) {
   const result = await browser.runtime.sendMessage({type, ...payload});

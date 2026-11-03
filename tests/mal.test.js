@@ -82,7 +82,7 @@ test('reports missing host permissions before opening OAuth or sending requests'
   const browser = memoryBrowser(); browser.permissions = {contains: async () => false};
   let opened = false; browser.identity.launchWebAuthFlow = async () => { opened = true; };
   const mal = new MalClient(browser, () => { throw new Error('Network must not be called'); });
-  await assert.rejects(mal.connect('example-client-id'), error => error.code === 'MAL_HOST_PERMISSION' && error.message.includes('Permissions and data'));
+  await assert.rejects(mal.connect('example-client-id'), error => error.code === 'MAL_HOST_PERMISSION' && error.message.includes('extension settings'));
   assert.equal(opened, false);
 });
 test('distinguishes token timeouts from network and browser blocking without exposing secrets', async () => {

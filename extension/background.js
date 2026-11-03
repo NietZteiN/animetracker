@@ -1,10 +1,12 @@
+import './lib/browser.js';
 import {Store} from './lib/store.js';
 import {MalClient} from './lib/mal.js';
 import {Controller} from './lib/controller.js';
+const {browser, onMessage} = globalThis.AnimeTrailBrowser;
 const store = new Store(browser), mal = new MalClient(browser), controller = new Controller(browser, store, mal);
 const uiRoot = browser.runtime.getURL('ui/');
 const sync = force => controller.sync(force);
-browser.runtime.onMessage.addListener((message, sender) => {
+onMessage((message, sender) => {
   if (!message || typeof message.type !== 'string') return undefined;
   const content = !!sender.tab && !sender.url?.startsWith(uiRoot);
   let task;

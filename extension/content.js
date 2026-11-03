@@ -1,4 +1,5 @@
 (() => {
+  const {browser, onMessage} = globalThis.AnimeTrailBrowser;
   if (globalThis.__animeTrailLoaded) return;
   globalThis.__animeTrailLoaded = true;
   const {detect, snapshot} = globalThis.AnimeTrailDetection;
@@ -42,7 +43,7 @@
     } catch (error) { console.debug('Anime Trail scan:', error.message); }
     finally { busy = false; }
   }
-  browser.runtime.onMessage.addListener((message, sender) => {
+  onMessage((message, sender) => {
     if (sender.id !== browser.runtime.id || !config.enabled) return undefined;
     if (message.type === 'animeTrailResumeOffer' && config.resumePrompts && window === window.top) {
       if (message.offer) globalThis.AnimeTrailResumeUI.show(message.offer); else globalThis.AnimeTrailResumeUI.hide();

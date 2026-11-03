@@ -12,7 +12,7 @@ export class MalClient {
   async checkPermission(url) {
     const origin = `${new URL(url).origin}/*`;
     if (this.browser.permissions?.contains && !await this.browser.permissions.contains({origins: [origin]})) {
-      const error = new Error(`${endpointName(url)} is blocked because Anime Trail lacks access to ${new URL(url).hostname}. Open about:addons → Anime Trail → Permissions and data, allow MyAnimeList website access, then retry. Your watch history is saved.`);
+      const error = new Error(`${endpointName(url)} is blocked because Anime Trail lacks access to ${new URL(url).hostname}. Open your browser extension settings for Anime Trail, allow MyAnimeList website access, then retry. Your watch history is saved.`);
       error.code = 'MAL_HOST_PERMISSION';
       throw error;
     }
