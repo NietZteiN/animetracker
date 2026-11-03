@@ -98,6 +98,8 @@ History’s **Open page** link opens the saved watch page. The on-page resume pr
 
 ## Coverage and limits
 
+If a manual correction saves but the timestamp stays on **Waiting for playback**, check the player status at the top of the popup. It distinguishes a missing page connection, missing settings, sampling failure, no visible video, paused playback, and a video whose duration is not ready. After updating an unpacked extension, click **Reload** on its card in `chrome://extensions`, then fully reload the watch page before testing. The popup also offers **Reload watch page** when it cannot connect. A working login or toolbar icon alone does not establish that the page script is running.
+
 There is no browser-only way to guarantee identification on every website. If a page exposes only an opaque identifier, uses an inaccessible player, or supplies no anime/episode metadata, use the manual correction. This extension does not recognize anime from video imagery or audio, bypass DRM, or use a remote recognition service.
 
 Firefox system pages and restricted domains cannot run content scripts. Private windows are excluded. Live streams, clips shorter than a minute, fractional episode numbers, and inaccessible closed-shadow players are not automatically tracked. Separate frames choose the longest active video as the likely episode; unusual ad/player arrangements may need a correction. A buffered player must actually advance its media clock for coverage to accumulate. Browser suspension or long throttled timer gaps do not count toward watched coverage. Episode numbering alone cannot establish the right MAL season.

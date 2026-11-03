@@ -36,7 +36,7 @@ try {
     }
     else { res.setHeader('Content-Type', 'text/html'); res.end('<video controls src="/media.wav"></video>'); }
   });
-  const site = await serve((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(`<title>Frieren Episode 3</title><h1>Frieren Episode 3</h1><iframe src="${player}/player"></iframe>`); });
+  const site = await serve((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(`${req.url.startsWith('/watch/') ? '<title>Netflix</title>' : '<title>Frieren Episode 3</title><h1>Frieren Episode 3</h1>'}<iframe src="${player}/player"></iframe>`); });
   context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium', headless: true,
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--autoplay-policy=no-user-gesture-required']
@@ -103,6 +103,28 @@ try {
   assert.ok(restored.data.history.length > 0);
   assert.deepEqual(errors, []);
   console.log('PASS: worker restart retains history/session and responds to new messages; no page errors');
+  const opaque = await context.newPage();
+  await opaque.goto(`${site}/watch/12345`);
+  const opaqueTab = await options.evaluate(async url => (await chrome.tabs.query({})).find(tab => tab.url === url).id, opaque.url());
+  await opaque.frameLocator('iframe').locator('video').evaluate(video => video.play());
+  const status = await options.evaluate(async tabId => chrome.runtime.sendMessage({type: 'view', tabId}), opaqueTab);
+  assert.equal(status.data.current, null);
+  assert.equal(status.data.playback.connected, true);
+  assert.equal(status.data.playback.configured, true);
+  const correction = await options.evaluate(async tabId => chrome.runtime.sendMessage({type: 'correct', tabId,
+    candidate: {title: 'Opaque player test', episode: 7, season: 1}}), opaqueTab);
+  assert.equal(correction.ok, true);
+  await options.waitForFunction(async () => {
+    const {state} = await chrome.storage.local.get('state');
+    return Object.values(state.history).some(record => record.title === 'Opaque player test' && record.position > 1);
+  });
+  const initial = await options.evaluate(async () => Object.values((await chrome.storage.local.get('state')).state.history).find(record => record.title === 'Opaque player test').position);
+  await options.waitForFunction(async initial => {
+    const {state} = await chrome.storage.local.get('state');
+    return Object.values(state.history).some(record => record.title === 'Opaque player test' && record.position > initial + 1);
+  }, initial);
+  assert.deepEqual(errors, []);
+  console.log('PASS: opaque watch URL with no episode metadata tracks advancing iframe playback after manual correction');
 } catch (error) {
   for (const page of context?.pages() || []) {
     if (page.url().startsWith('http://127.0.0.1:')) console.error('Watch-page diagnostics:', await page.locator('[role="status"]').allTextContents());

@@ -2,6 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setup, candidate, sample} from './helpers.js';
 import {episodeKey, seriesKey} from '../extension/lib/core.js';
+
+test('popup distinguishes a missing page script from a connected player without episode metadata', async () => {
+  const {controller, browser} = setup();
+  browser.tabs.sendMessage = async () => { throw new Error('Receiving end does not exist'); };
+  assert.deepEqual((await controller.view(browser.tab.id)).playback, {connected: false});
+  browser.tabs.sendMessage = async (id, message, options) => {
+    assert.equal(message.type, 'animeTrailStatus'); assert.equal(options.frameId, 0);
+    return {ok: true, configured: true, enabled: true, videoCount: 1, playingCount: 1, trackableCount: 1, scanFailed: false};
+  };
+  const view = await controller.view(browser.tab.id);
+  assert.equal(view.current, null); assert.equal(view.playback.connected, true);
+  assert.equal(view.playback.trackableCount, 1);
+  assert.equal((await controller.view()).playback, null);
+  browser.tab.incognito = true;
+  assert.equal((await controller.view(browser.tab.id)).playback, null);
+});
 test('embedded player uses parent title and persists cross-site episode progress', async () => {
   const {controller, store, sender, browser} = setup();
   await controller.observe({candidate, sample: null}, sender);

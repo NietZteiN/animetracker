@@ -3,6 +3,21 @@ let tabId, view, current;
 async function refresh() {
   view = await rpc('view', {tabId}); current = view.current;
   const enabled = view.settings.enabled;
+  const playback = view.playback;
+  let playerStatus = '';
+  if (enabled && playback) {
+    if (!playback.connected) playerStatus = 'Anime Trail is not connected to this page. Reload the watch page after installing or updating the extension.';
+    else if (!playback.configured) playerStatus = 'The page script is loaded but has not received its settings. Reload this watch page.';
+    else if (!playback.enabled) playerStatus = 'Tracking is disabled for this page. Check excluded websites and site access in settings.';
+    else if (playback.scanFailed) playerStatus = 'Anime Trail could not sample this player. Reload the watch page and try again.';
+    else if (!current?.duration && !playback.videoCount) playerStatus = 'The page script is connected, but no video is visible in this frame. Start the episode; embedded players are checked separately.';
+    else if (!current?.duration && !playback.playingCount) playerStatus = 'Video found. Start playback to record its timestamp.';
+    else if (!current?.duration && !playback.trackableCount) playerStatus = 'Video found, but its duration or playback data is not ready for tracking.';
+    else if (!current) playerStatus = 'Playback is visible, but the anime title or episode is missing. Use Set title / episode.';
+  }
+  $('player-status').textContent = playerStatus;
+  $('player-status').hidden = !playerStatus;
+  $('reload-page').hidden = !enabled || !playback || playback.connected && playback.configured && !playback.scanFailed;
   $('tracking-label').textContent = enabled ? 'Tracking' : 'Paused';
   $('pause').textContent = enabled ? 'Pause tracking' : 'Resume tracking';
   $('empty').hidden = !!current; $('current').hidden = !current;
@@ -27,6 +42,7 @@ async function refresh() {
   if (!view.history.length) $('history').append(el('p', {class: 'help', text: 'Watched episodes and playback progress appear here.'}));
 }
 const openOptions = () => browser.runtime.openOptionsPage();
+$('reload-page').addEventListener('click', event => action(event.currentTarget, async () => { await browser.tabs.reload(tabId); window.close(); }));
 for (const id of ['settings', 'library', 'connect']) $(id).addEventListener('click', openOptions);
 $('pause').addEventListener('click', event => action(event.currentTarget, async () => { await rpc('settings', {settings: {enabled: !view.settings.enabled}}); await refresh(); }));
 $('sync').addEventListener('click', event => action(event.currentTarget, async () => { const result = await rpc('sync'); await refresh(); notice(result.pending ? `${result.pending} update(s) still pending. Check matching or connection errors.` : 'Sync finished. Unmatched titles can be linked with “Find / change match”.'); }));
