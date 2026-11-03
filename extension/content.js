@@ -6,7 +6,7 @@
   // randomUUID is restricted to secure contexts; HTTP streaming pages still work.
   const uniqueId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   const documentId = uniqueId();
-  let config = {enabled: false}, configured = false, lastScanError = '', lastFingerprint = '', busy = false, scanTimer, pageContext = '';
+  let config = {enabled: false}, configured = false, configuring = false, lastScanError = '', lastFingerprint = '', busy = false, scanTimer, pageContext = '', lastVideo;
   const players = new WeakMap();
   const mediaId = video => `${documentId}:${players.get(video)}:${video.currentSrc}`.slice(0, 150);
   function videos(root = document, result = []) {
@@ -27,10 +27,14 @@
         if (context !== pageContext) globalThis.AnimeTrailResumeUI.hide();
         pageContext = context;
       }
-      const video = videos().filter(v => !v.paused && !v.ended && v.readyState >= 2 && Number.isFinite(v.duration) && v.duration >= 60)
-        .sort((a, b) => b.duration - a.duration)[0];
+      const eligible = videos().filter(v => v.readyState >= 2 && Number.isFinite(v.duration) && v.duration >= 60);
+      const video = eligible.filter(v => !v.paused && !v.ended).sort((a, b) => b.duration - a.duration)[0]
+        // Capture the end of short play/pause cycles, including subtitle auto-pause.
+        // An initially paused player must not create watched history by itself.
+        || (force && eligible.includes(lastVideo) ? lastVideo : null);
       let sample = null;
       if (video) {
+        lastVideo = video;
         if (!players.has(video)) players.set(video, uniqueId());
         sample = {mediaId: mediaId(video), duration: video.duration, position: video.currentTime, rate: video.playbackRate, playing: !video.paused && !video.ended, seeking: video.seeking};
       }
@@ -75,7 +79,10 @@
     });
   });
   async function configure() {
+    if (configuring) return;
+    configuring = true;
     try { const result = await browser.runtime.sendMessage({type: 'contentConfig'}); if (result?.ok) { config = result.data; configured = true; } if (!config.enabled || !config.resumePrompts) globalThis.AnimeTrailResumeUI.hide(); await scan(true); } catch (error) { console.debug('Anime Trail configuration:', error.message); }
+    finally { configuring = false; }
   }
   browser.storage.onChanged.addListener(changes => {
     if (changes.state && JSON.stringify(changes.state.oldValue?.settings) !== JSON.stringify(changes.state.newValue?.settings)) configure();
@@ -85,9 +92,9 @@
     if (scanTimer) return;
     scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 1000);
   }).observe(document.documentElement, {childList: true, subtree: true, characterData: true});
-  for (const event of ['play', 'pause', 'ended', 'seeked', 'loadedmetadata']) document.addEventListener(event, () => scan(true), true);
+  for (const event of ['play', 'playing', 'pause', 'ended', 'seeked', 'loadedmetadata']) document.addEventListener(event, () => scan(true), true);
   addEventListener('popstate', () => scan(true));
   addEventListener('pageshow', () => scan(true));
-  setInterval(() => scan(), 5000);
+  setInterval(() => configured ? scan() : configure(), 5000);
   configure();
 })();
