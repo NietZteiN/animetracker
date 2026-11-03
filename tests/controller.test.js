@@ -18,6 +18,17 @@ test('popup distinguishes a missing page script from a connected player without 
   browser.tab.incognito = true;
   assert.equal((await controller.view(browser.tab.id)).playback, null);
 });
+
+test('paused samples cannot start tracking or let another frame overwrite the owning player', async () => {
+  const {controller, store, sender} = setup();
+  await controller.observe({candidate, sample: {...sample(20), playing: false}}, sender);
+  assert.deepEqual((await store.load()).history, {});
+  await controller.observe({candidate, sample: sample(10)}, sender);
+  await controller.observe({candidate, sample: {...sample(90), playing: false}}, {...sender, frameId: 3});
+  assert.equal((await store.load()).history[episodeKey(candidate)].position, 10);
+  await controller.observe({candidate, sample: {...sample(90), playing: false, mediaId: 'replacement'}}, sender);
+  assert.equal((await store.load()).history[episodeKey(candidate)].position, 10);
+});
 test('embedded player uses parent title and persists cross-site episode progress', async () => {
   const {controller, store, sender, browser} = setup();
   await controller.observe({candidate, sample: null}, sender);

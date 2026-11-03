@@ -98,7 +98,9 @@ export class Controller {
       if (hadOffer && !session.resumeOffer) this.browser.tabs.sendMessage(tabId, {type: 'animeTrailResumeOffer', offer: null}, {frameId: 0}).catch(() => {});
     }
     const sample = message.sample;
-    if (candidate && sample && sample.playing && Number.isFinite(sample.duration) && sample.duration >= 60) {
+    const ownedPause = candidate && sample && !sample.playing && session.owner?.frameId === sender.frameId
+      && session.owner.mediaId === String(sample.mediaId).slice(0, 150) && session.previous?.key === episodeKey(candidate);
+    if (candidate && sample && (sample.playing || ownedPause) && Number.isFinite(sample.duration) && sample.duration >= 60) {
       const owner = session.owner;
       // Prefer the longest active player so a short ad iframe cannot displace the episode.
       const mayOwn = !owner || owner.frameId === sender.frameId || now - owner.at > 15000 || sample.duration > owner.duration * 1.5;
@@ -107,12 +109,12 @@ export class Controller {
         session.owner = {frameId: sender.frameId, at: now, duration: sample.duration, mediaId: String(sample.mediaId).slice(0, 150)};
         if (session.pendingResume?.expiresAt < now) delete session.pendingResume;
         const pending = session.pendingResume, identity = playbackIdentity(state, candidate);
-        if (pending && pending.series === identity.series && pending.targetCanonical === identity.episode) {
+        if (sample.playing && pending && pending.series === identity.series && pending.targetCanonical === identity.episode) {
           session.resumeOffer = null; session.resumeDecision = 'accepted';
           const result = await this.seek(tabId, session.owner, pending.position);
           if (result.ok) { delete session.pendingResume; delete session.previous; }
         }
-        if (state.settings.resumePrompts && session.resumeOffer && !session.resumeDecision) {
+        if (sample.playing && state.settings.resumePrompts && session.resumeOffer && !session.resumeDecision) {
           // Snapshot the previous visit before this sample updates its saved timestamp.
           if (session.resumeOffer.kind === 'seek' && sample.position >= session.resumeOffer.position - 10) session.resumeDecision = 'unneeded';
           else this.browser.tabs.sendMessage(tabId, {type: 'animeTrailResumeOffer', offer: session.resumeOffer}, {frameId: 0}).catch(() => {});
